@@ -1,0 +1,62 @@
+#!/bin/bash
+#
+# check_varnish_cachehitratio
+# example:
+# 1) check_varnish_cachehitratio 99
+#  -> if hitraito >= 99 then "OK" else "CRITICAL"
+# 2) check_varnish_cachehitratio 90 99
+#  -> hitraito >= 99 then "OK"
+#	  90 < hitraito < 99 then "WARNING"
+#	  hitraito <= 90 then "CRITICAL"
+#######################################
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
+
+E_SUCCESS='0'
+E_WARNING='1'
+E_CRITICAL='2'
+E_UNKNOWN='3'
+
+progname=`basename $0`
+cache_hits=`varnishstat -1 -f 'cache_hit' | sed -e "s/\s\s*/ /g" | cut -d' ' -f2`
+cache_miss=`varnishstat -1 -f 'cache_miss' | sed -e "s/\s\s*/ /g" | cut -d' ' -f2`
+hit_raito=`echo "scale=3; ($cache_hits / ( $cache_hits + $cache_miss ))*100" | bc`
+
+if [ "$cache_hits" == "" -o "$cache_miss" == "" ]; then
+  echo "UNKNOWN:can't execute varnishstat. please check path"
+  exit $E_UNKNOWN
+fi
+
+if [ $# -ne 1 -a $# -ne 2 ]; then
+  echo "Usage : $progname <lower> <upper> echo or Usage : $progname <lower>"
+  exit $E_UNKNOWN
+fi
+
+if [ $# -eq 1 ]; then
+  is_success=`echo "$hit_raito >= $1" | bc`
+  if [ $is_success -eq 1 ]; then
+    echo "OK: current is $hit_raito"
+    exit $E_SUCCESS
+  else
+    echo "CRITICAL: cache hit ratio is below $1(current is $hit_raito)"
+    exit $E_CRITICAL
+  fi
+else
+  is_success=`echo "$hit_raito >= $2" | bc`
+  is_warn=`echo "$1 < $hit_raito && $hit_raito < $2" | bc`
+  is_ctrical=`echo "$hit_raito <= $1" | bc`
+
+  if [ $is_success -eq 1 ]; then
+    echo "OK: current is $hit_raito"
+    exit $E_SUCCESS
+  elif [ $is_warn -eq 1 ]; then
+    echo "WARNING: cache hit ratio between $1 and $2 (current is $hit_raito)"
+    exit $E_WARNING
+  elif [ $is_ctrical -eq 1 ]; then
+    echo "CRITICAL: cache hit ratio is below $1(current is $hit_raito)"
+    exit $E_CRITICAL
+  fi
+fi
+
+echo "E_UNKNOWN: cache_hits->$cache_hits , cache_miss->$cache_miss, hit_raito->$cache_miss"
+exit $E_UNKNOWN
